@@ -1,4 +1,5 @@
-streamlit
-pandas
-numpy
-plotly
+dash>=2.15.0
+dash-ag-grid>=3.1.0
+pandas>=2.0.0
+plotly>=5.18.0
+numpy>=1.24.0
