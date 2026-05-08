@@ -4,8 +4,8 @@ import dash_ag_grid as dag
 import pandas as pd
 import numpy as np
 
-# 1. Configuration for OPmobility BGs
-BUSINESS_GROUPS = ["Exterior & Lighting", "Modules", "C-Power", "H2-Power"]
+# 1. Configuration for OPm BGs
+BUSINESS_GROUPS = ["E&L", "Mod", "C-P", "H2-P"]
 
 # Mock Data for 152 Plants
 np.random.seed(42)
