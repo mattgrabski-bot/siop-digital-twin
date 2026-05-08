@@ -2,117 +2,106 @@ import dash
 from dash import dcc, html, Input, Output, State, callback
 import dash_ag_grid as dag
 import pandas as pd
-import plotly.express as px
 import numpy as np
 
-# 1. Domain Configuration for OPmobility
+# 1. Configuration for OPmobility BGs
 BUSINESS_GROUPS = ["Exterior & Lighting", "Modules", "C-Power", "H2-Power"]
-REGIONS = ["EMEA", "Americas", "Asia-Pacific"]
-COUNTRIES = [f"Country {i+1}" for i in range(28)]
-MONTHS = ["2024-Q1", "2024-Q2", "2024-Q3", "2024-Q4"]
 
-# Mock Data Generator (152 Plants across 4 BGs)
+# Mock Data for 152 Plants
 np.random.seed(42)
-data_list = []
+plants_data = []
 for i in range(152):
-    plant_id = f"PL-{1000 + i}"
     bg = np.random.choice(BUSINESS_GROUPS)
-    region = np.random.choice(REGIONS)
-    country = np.random.choice(COUNTRIES)
-    for month in MONTHS:
-        stat = np.random.randint(100, 500)
-        data_list.append({
-            "BG": bg, "Region": region, "Country": country, "Plant": plant_id,
-            "Month": month, "Stat_Forecast": stat, "Manual_Adj": 0, "Final_Plan": stat
-        })
+    stat = np.random.randint(200, 800)
+    plants_data.append({
+        "BG": bg, "Plant": f"PL-{1000+i}", "Stat_Forecast": stat, 
+        "Manual_Adj": 0, "Final_Plan": stat, "Status": "Draft"
+    })
 
-df_init = pd.DataFrame(data_list)
+app = dash.Dash(__name__)
 
-app = dash.Dash(__name__, external_stylesheets=["https://codepen.io"])
-
-# 2. Modern "Anaplan-Style" Layout
+# 2. UI Layout with Workflow Controls
 app.layout = html.Div([
-    # Top Header & Global Navigation
-    html.Header([
-        html.H2("OPmobility | Integrated Business Planning (IBP)", style={'margin': '0', 'color': 'white'}),
-        html.P("Scenario: 2024 Master Production Schedule", style={'margin': '0', 'color': '#ccc'})
-    ], style={'backgroundColor': '#002D62', 'padding': '20px', 'display': 'flex', 'flexDirection': 'column'}),
+    # Enterprise Header
+    html.Div([
+        html.H2("OPmobility IBP | Approval Portal", style={'color': 'white', 'margin': '0'}),
+        html.Div(id="cycle-status", style={'color': '#f0ad4e', 'fontWeight': 'bold', 'fontSize': '18px'})
+    ], style={'backgroundColor': '#002D62', 'padding': '20px', 'display': 'flex', 'justifyContent:': 'space-between'}),
 
-    # Filter/Selector Panel (Context Bar)
+    # Approval Toolbar
     html.Div([
         html.Div([
-            html.Label("Business Group View", style={'fontWeight': 'bold'}),
+            html.Label("Business Group Context", style={'fontWeight': 'bold'}),
             dcc.Dropdown(id='bg-selector', options=BUSINESS_GROUPS, value=BUSINESS_GROUPS[0], clearable=False)
-        ], style={'width': '250px', 'marginRight': '20px'}),
+        ], style={'width': '300px', 'marginRight': '20px'}),
         
         html.Div([
-            html.Label("Region Filter", style={'fontWeight': 'bold'}),
-            dcc.Dropdown(id='region-selector', options=REGIONS, multi=True, placeholder="All Regions")
-        ], style={'width': '250px'})
-    ], style={'padding': '15px', 'display': 'flex', 'borderBottom': '1px solid #ddd'}),
+            html.Button("Submit for Approval", id="submit-btn", n_clicks=0, 
+                        style={'backgroundColor': '#28a745', 'color': 'white', 'border': 'none', 'padding': '10px 25px', 'borderRadius': '5px'}),
+            html.Button("Recall / Reset", id="reset-btn", n_clicks=0, 
+                        style={'marginLeft': '10px', 'padding': '10px 25px', 'borderRadius': '5px'})
+        ], style={'display': 'flex', 'alignItems': 'flex-end'})
+    ], style={'padding': '20px', 'borderBottom': '1px solid #ddd', 'display': 'flex', 'backgroundColor': '#f8f9fa'}),
 
-    # Workspace Area
+    # Planning Grid
     html.Div([
-        # Data Grid (Input Layer)
-        html.Div([
-            html.H4("Plant Production overrides (Volume in K-Units)"),
-            dag.AgGrid(
-                id="planning-grid",
-                columnDefs=[
-                    {"field": "Region", "rowGroup": True, "hide": True},
-                    {"field": "Country", "rowGroup": True, "hide": True},
-                    {"field": "Plant", "pinned": "left", "width": 120},
-                    {"field": "Month", "width": 110},
-                    {"field": "Stat_Forecast", "headerName": "Stat. Forecast", "type": "numericColumn"},
-                    {"field": "Manual_Adj", "headerName": "Adjustment (+/-)", "editable": True, 
-                     "cellStyle": {"backgroundColor": "#fff7e6", "border": "1px solid #ffd591"}},
-                    {"field": "Final_Plan", "headerName": "Final Plan", "type": "numericColumn", 
-                     "cellStyle": {"fontWeight": "bold", "backgroundColor": "#f0f2f5"}}
-                ],
-                defaultColDef={"flex": 1, "sortable": True, "resizable": True, "filter": True},
-                dashGridOptions={"rowGroupPanelShow": "always", "groupDefaultExpanded": 1},
-                style={"height": "500px"}
-            )
-        ], className="eight columns"),
+        dag.AgGrid(
+            id="workflow-grid",
+            columnDefs=[
+                {"field": "Plant", "pinned": "left"},
+                {"field": "Stat_Forecast", "headerName": "Stat. Forecast"},
+                {"field": "Manual_Adj", "headerName": "Adj (+/-)", "editable": True, 
+                 "cellStyle": {"styleConditions": [{"condition": "params.data.Status === 'Draft'", "style": {"backgroundColor": "#fff7e6"}}]}},
+                {"field": "Final_Plan", "headerName": "Final Plan", "cellStyle": {"fontWeight": "bold"}},
+                {"field": "Status", "cellClassRules": {
+                    "bg-warning": "params.value === 'Pending Approval'",
+                    "bg-success": "params.value === 'Approved'"
+                }}
+            ],
+            defaultColDef={"flex": 1, "sortable": True},
+            style={"height": "550px"}
+        )
+    ], style={'padding': '20px'}),
 
-        # Insights Sidebar (Visualization Layer)
-        html.Div([
-            html.H4("Regional Concentration"),
-            dcc.Graph(id="side-chart", style={"height": "450px"})
-        ], className="four columns")
-    ], className="row", style={'padding': '20px'})
+    # Hidden Store to act as a "Database"
+    dcc.Store(id='planning-db', data=pd.DataFrame(plants_data).to_dict('records'))
+], style={'fontFamily': 'Segoe UI, Arial'})
 
-], style={'fontFamily': 'Helvetica, Arial, sans-serif'})
-
-# 3. Dynamic Write-back & Recalculation
+# 3. Logic: Data Freeze and Approval Workflow
 @callback(
-    Output("planning-grid", "rowData"),
-    Output("side-chart", "figure"),
+    Output("workflow-grid", "rowData"),
+    Output("cycle-status", "children"),
+    Output("planning-db", "data"),
     Input("bg-selector", "value"),
-    Input("region-selector", "value"),
-    Input("planning-grid", "cellValueChanged"),
-    State("planning-grid", "rowData")
+    Input("submit-btn", "n_clicks"),
+    Input("reset-btn", "n_clicks"),
+    Input("workflow-grid", "cellValueChanged"),
+    State("planning-db", "data")
 )
-def sync_dashboard(selected_bg, selected_regions, cell_change, current_data):
-    # Filter base data for the selected BG
-    dff = df_init[df_init['BG'] == selected_bg].copy()
-    
-    if selected_regions:
-        dff = dff[dff['Region'].isin(selected_regions)]
+def handle_workflow(selected_bg, submit_pts, reset_pts, cell_change, current_db):
+    ctx = dash.callback_context
+    trigger = ctx.triggered[0]['prop_id'].split('.')[0]
+    db_df = pd.DataFrame(current_db)
 
-    # Real-time Calculation (Final Plan = Stat + Manual)
-    if cell_change:
-        # If user edited a cell, update the calculation logic
-        temp_df = pd.DataFrame(current_data)
-        temp_df["Final_Plan"] = temp_df["Stat_Forecast"].astype(float) + temp_df["Manual_Adj"].astype(float)
-        dff = temp_df
+    # ACTION 1: Submit BG for Approval (Freeze)
+    if trigger == "submit-btn":
+        db_df.loc[db_df['BG'] == selected_bg, 'Status'] = 'Pending Approval'
 
-    # Sidebar Viz: Consolidated Plan by Region
-    fig = px.pie(dff, values='Final_Plan', names='Region', hole=.4,
-                 title=f"Production Share: {selected_bg}",
-                 color_discrete_sequence=px.colors.qualitative.Prism)
+    # ACTION 2: Reset to Draft (Unlock)
+    elif trigger == "reset-btn":
+        db_df.loc[db_df['BG'] == selected_bg, 'Status'] = 'Draft'
+
+    # ACTION 3: Calculation (Only allowed if status is 'Draft')
+    elif trigger == "workflow-grid":
+        for i, row in db_df.iterrows():
+            if row['Status'] == 'Draft':
+                db_df.at[i, 'Final_Plan'] = float(row['Stat_Forecast']) + float(row['Manual_Adj'])
+
+    # Filter UI view
+    display_df = db_df[db_df['BG'] == selected_bg]
+    status_text = f"Status: {display_df['Status'].iloc[0]}" if not display_df.empty else "N/A"
     
-    return dff.to_dict("records"), fig
+    return display_df.to_dict("records"), status_text, db_df.to_dict("records")
 
 if __name__ == "__main__":
     app.run_server(debug=True)
